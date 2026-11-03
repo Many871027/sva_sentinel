@@ -180,32 +180,51 @@ Abre el notebook: [`colab_notebooks/03_openvino_int8_quantization.ipynb`](file:/
 
 ---
 
-## 8. Integración con MLflow
+## 8. Integración con MLflow y Hugging Face Model Hub
 
-Para monitorizar las métricas en tiempo real mientras Colab entrena:
+Para monitorizar las métricas en tiempo real mientras Colab entrena y versionar los artefactos finales:
 
-### Opción A: Conexión a tu Docker Local vía Túnel Ngrok
-1. En tu laptop local levanta el servidor de MLflow:
+### Opción A: Conexión a tu Docker Local de MLflow vía Túnel Ngrok
+El servidor MLflow corre sobre `uvicorn` en Docker. Para permitir que Google Colab envíe telemetría a tu máquina local sin ser bloqueado por la protección anti-DNS rebinding (`403 Forbidden: Invalid Host header`), Ngrok debe reescribir la cabecera `Host` a `localhost:5000`:
+
+1. Levanta el servidor local de MLflow:
    ```bash
    docker compose up -d mlflow-server
    ```
-2. Abre un túnel hacia el puerto 5000:
-   ```bash
-   ngrok http 5000
+2. En tu archivo de configuración de Ngrok (`%LOCALAPPDATA%\ngrok\ngrok.yml` en Windows o `~/.config/ngrok/ngrok.yml` en Linux/Mac), define el túnel con `host_header`:
+   ```yaml
+   version: "2"
+   authtoken: <TU_AUTHTOKEN>
+   tunnels:
+     mlflow:
+       proto: http
+       addr: 5000
+       host_header: "localhost:5000"
    ```
-3. En Colab, establece la URL de Ngrok antes de iniciar el entrenamiento:
+3. Inicia el túnel:
+   ```bash
+   ngrok start mlflow
+   ```
+4. En Colab, establece la URL de Ngrok en el entorno antes de iniciar el tracking:
    ```python
    import os
    os.environ["MLFLOW_TRACKING_URI"] = "https://tu-subdominio.ngrok-free.app"
    ```
+   > [!NOTE]
+   > Puedes consultar el panel en vivo abriendo localmente `http://localhost:5000` o mediante la URL pública de Ngrok.
 
-### Opción B: Persistencia Directa en Google Drive
-Si no deseas abrir puertos:
+### Opción B: Persistencia de MLflow Directa en Google Drive
+Si no deseas abrir túneles externos:
 ```python
 import os
 os.environ["MLFLOW_TRACKING_URI"] = "file:///content/drive/MyDrive/sva_sentinel/mlruns"
 ```
-Al finalizar el entrenamiento, sincronizas la carpeta `mlruns` a tu laptop y visualizas los gráficos localmente con `mlflow ui`.
+
+### Publicación y Versionado en Hugging Face Model Hub
+Los modelos entrenados o destilados se publican directamente en Hugging Face Hub (ej. `ManyCamDS/sva-yolo11n-distilled`):
+- **Autenticación segura:** Se obtiene el `HF_TOKEN` desde los *Secrets* de Colab (`userdata.get('HF_TOKEN')`) o por solicitud interactiva mediante `getpass` (sin exponer tokens en el código fuente ni violar GitHub Push Protection).
+- **Idempotencia con Git LFS:** Hugging Face Hub valida los hashes SHA256 antes de cada subida. Si los archivos locales no han cambiado respecto a la última versión, emitirá `No files have been modified since last commit. Skipping to prevent empty commit.`, garantizando transferencias óptimas y evitando commits vacíos.
+- Repositorio activo de modelos: [https://huggingface.co/ManyCamDS/sva-yolo11n-distilled](https://huggingface.co/ManyCamDS/sva-yolo11n-distilled)
 
 ---
 
