@@ -76,16 +76,32 @@ Abre una celda de terminal o notebook en Colab y clona el proyecto:
 !pip install -q -e .
 !pip install -q ultralytics onnx onnxruntime mlflow pydantic supervision psutil
 
-# 3. Descarga de datasets desde Hugging Face Hub al disco NVMe local
-!python -m src.pipeline.dataset_ingest --all-profiles --raw-dir /content/data/raw
+# 3. Registrar el directorio del repositorio en PYTHONPATH (evita ModuleNotFoundError en cualquier celda)
+import os, sys
+repo_path = "/content/sva_sentinel"
+if repo_path not in sys.path:
+    sys.path.insert(0, repo_path)
+os.environ["PYTHONPATH"] = f"{repo_path}:{os.environ.get('PYTHONPATH', '')}"
 
-# 4. Normalización de anotaciones heterogéneas a formato YOLO TXT con ontología canónica:
+# 4. Descarga de datasets desde Hugging Face Hub al disco NVMe local
+!PYTHONPATH=/content/sva_sentinel python -m src.pipeline.dataset_ingest --all-profiles --raw-dir /content/data/raw
+
+# 5. Normalización de anotaciones heterogéneas a formato YOLO TXT con ontología canónica:
 # 0: car | 1: motorcycle | 2: bicycle | 3: e-scooter | 4: pedestrian
-!python -m src.pipeline.dataset_curation --format yolo --input /content/data/raw --output-images /content/data/curated/images --output-labels /content/data/curated/labels
+!PYTHONPATH=/content/sva_sentinel python -m src.pipeline.dataset_curation --format yolo --input /content/data/raw --output-images /content/data/curated/images --output-labels /content/data/curated/labels
 
-# 5. Particionado determinista 70/20/10 con verificación de integridad SHA256
-!python -m src.pipeline.dataset_split --curated-dir /content/data/curated --seed 42
+# 6. Particionado determinista 70/20/10 con verificación de integridad SHA256
+!PYTHONPATH=/content/sva_sentinel python -m src.pipeline.dataset_split --curated-dir /content/data/curated --seed 42
 ```
+
+> [!TIP]
+> **Comandos CLI globales equivalentes:**  
+> Si ejecutaste el paso 2 (`pip install -q -e .`), también puedes invocar directamente los binarios registrados en cualquier celda sin prefijo `python -m`:
+> ```bash
+> !sva-ingest --all-profiles --raw-dir /content/data/raw
+> !sva-curate --format yolo --input /content/data/raw --output-images /content/data/curated/images --output-labels /content/data/curated/labels
+> !sva-split --curated-dir /content/data/curated --seed 42
+> ```
 
 ---
 
