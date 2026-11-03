@@ -157,7 +157,51 @@ def verify_onnx_integrity(
     if file_size < 16:
         raise ModelExportError(f"ONNX file is corrupt or empty (size {file_size} bytes): {path}")
 
-    # 1. Parse standard ONNX protobuf if onnx library is available
+    # 1. Check SVA mock ONNX container header first (R19)
+    with open(path, "rb") as f:
+        magic = f.read(4)
+
+    if magic == b"ONNX":
+        with open(path, "rb") as f:
+            f.read(4)
+            header_len_bytes = f.read(4)
+            if len(header_len_bytes) == 4:
+                header_len = struct.unpack("<I", header_len_bytes)[0]
+                meta_json = f.read(header_len).decode("utf-8")
+                meta = json.loads(meta_json)
+
+                # Validate input shape
+                actual_shape = meta.get("input_shape", [])
+                if len(actual_shape) != 4:
+                    raise ModelExportError(f"Expected 4D input shape, got {actual_shape}")
+
+                _, exp_c, exp_h, exp_w = expected_input_shape
+                if (
+                    actual_shape[1] != exp_c
+                    or actual_shape[2] != exp_h
+                    or actual_shape[3] != exp_w
+                ):
+                    raise ModelExportError(
+                        f"ONNX input spatial shape mismatch: expected [*, {exp_c}, {exp_h}, {exp_w}], "
+                        f"got {actual_shape}"
+                    )
+
+                if meta.get("opset_version", 0) < min_opset:
+                    raise ModelExportError(f"ONNX opset {meta.get('opset_version')} < min {min_opset}")
+
+                if require_dynamic_batch and not meta.get("dynamic_batch", False):
+                    raise ModelExportError("ONNX model lacks dynamic batching configuration on axis 0")
+
+                return {
+                    "onnx_path": str(path),
+                    "opset_version": meta.get("opset_version"),
+                    "input_name": meta.get("input_name"),
+                    "input_shape": actual_shape,
+                    "dynamic_batch": meta.get("dynamic_batch"),
+                    "verified": True,
+                }
+
+    # 2. Parse standard ONNX protobuf if onnx library is available
     if HAS_ONNX:
         try:
             model = onnx.load(str(path))
@@ -225,47 +269,6 @@ def verify_onnx_integrity(
             if not isinstance(exc, ModelExportError):
                 raise ModelExportError(f"ONNX integrity validation failed: {exc}") from exc
             raise
-
-    # 2. Check SVA mock ONNX container header (R19)
-    with open(path, "rb") as f:
-        magic = f.read(4)
-        if magic == b"ONNX":
-            header_len_bytes = f.read(4)
-            if len(header_len_bytes) == 4:
-                header_len = struct.unpack("<I", header_len_bytes)[0]
-                meta_json = f.read(header_len).decode("utf-8")
-                meta = json.loads(meta_json)
-
-                # Validate input shape
-                actual_shape = meta.get("input_shape", [])
-                if len(actual_shape) != 4:
-                    raise ModelExportError(f"Expected 4D input shape, got {actual_shape}")
-
-                _, exp_c, exp_h, exp_w = expected_input_shape
-                if (
-                    actual_shape[1] != exp_c
-                    or actual_shape[2] != exp_h
-                    or actual_shape[3] != exp_w
-                ):
-                    raise ModelExportError(
-                        f"ONNX input spatial shape mismatch: expected [*, {exp_c}, {exp_h}, {exp_w}], "
-                        f"got {actual_shape}"
-                    )
-
-                if meta.get("opset_version", 0) < min_opset:
-                    raise ModelExportError(f"ONNX opset {meta.get('opset_version')} < min {min_opset}")
-
-                if require_dynamic_batch and not meta.get("dynamic_batch", False):
-                    raise ModelExportError("ONNX model lacks dynamic batching configuration on axis 0")
-
-                return {
-                    "onnx_path": str(path),
-                    "opset_version": meta.get("opset_version"),
-                    "input_name": meta.get("input_name"),
-                    "input_shape": actual_shape,
-                    "dynamic_batch": meta.get("dynamic_batch"),
-                    "verified": True,
-                }
 
     # If neither standard protobuf nor mock header matches, fail validation
     raise ModelExportError(f"Unrecognized or corrupted ONNX model binary structure: {path}")
