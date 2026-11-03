@@ -69,8 +69,8 @@ Abre una celda de terminal o notebook en Colab y clona el proyecto:
 
 ```bash
 # 1. Clonar repositorio y entrar a la raíz
-!git clone https://github.com/tu-usuario/ROADWAY-MONITOR.git /content/ROADWAY-MONITOR
-%cd /content/ROADWAY-MONITOR
+!git clone https://github.com/Many871027/sva_sentinel.git /content/sva_sentinel
+%cd /content/sva_sentinel
 
 # 2. Instalar el paquete en modo editable y librerías clave
 !pip install -q -e .
