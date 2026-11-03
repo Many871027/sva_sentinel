@@ -1,0 +1,84 @@
+services:
+  edge-api:
+    container_name: sva-edge-api
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    mem_limit: 4g
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow-server:5000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+      - storage_data:/app/storage
+    networks:
+      - sva-network
+    depends_on:
+      mlflow-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  mlflow-server:
+    container_name: sva-mlflow
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+    mem_limit: 1.5g
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - sva-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  nextjs-ui:
+    container_name: sva-nextjs
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    mem_limit: 1g
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws/live-alerts
+      - NODE_ENV=production
+    networks:
+      - sva-network
+    depends_on:
+      edge-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  sva-network:
+    driver: bridge
+
+volumes:
+  mlflow_data:
+    driver: local
+  storage_data:
+    driver: local

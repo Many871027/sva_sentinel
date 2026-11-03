@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.api - Edge Inference Service (CPU only, 8GB RAM budget)
+# Target Service: edge-api
+
+# Stage 1: Build & Dependencies
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --upgrade pip \
+    && pip install --prefix=/install .
+
+# Stage 2: Lean Runtime
+FROM python:3.11-slim AS runtime
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/install/bin:$PATH" \
+    PYTHONPATH="/app:$PYTHONPATH"
+
+# Install runtime shared libraries required by OpenCV headless and curl for health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed dependencies from builder
+COPY --from=builder /install /install
+
+# Copy application source code and configs into the container
+COPY src/ /app/src/
+COPY configs/ /app/configs/
+
+# Expose FastAPI edge server port
+EXPOSE 8000
+
+# Health check endpoint
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health/live || exit 1
+
+# Launch edge API server via uvicorn
+CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

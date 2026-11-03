@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.mlflow - Lightweight MLflow Tracking Server with SQLite Backend
+# Target Service: mlflow-server
+
+FROM python:3.11-slim
+
+WORKDIR /mlflow
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip \
+    && pip install mlflow>=2.17.0 gunicorn
+
+# Directory for SQLite database and local artifact storage
+RUN mkdir -p /mlflow/artifacts
+
+VOLUME ["/mlflow"]
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+CMD ["mlflow", "server", \
+     "--backend-store-uri", "sqlite:////mlflow/mlflow.db", \
+     "--default-artifact-root", "/mlflow/artifacts", \
+     "--host", "0.0.0.0", \
+     "--port", "5000"]

@@ -1,0 +1,24 @@
+{
+  "model_name": "qwen2.5-0.5b-auditor-q4_k_m",
+  "quantization_type": "Q4_K_M",
+  "baseline_f16_size_bytes": 1000000000,
+  "quantized_q4_size_bytes": 380000000,
+  "size_reduction_pct": 62.0,
+  "achieved_size_reduction": true,
+  "mean_latency_seconds": 0.0,
+  "p95_latency_seconds": 0.0,
+  "prompt_tokens_per_sec": 2547770.78,
+  "generation_tokens_per_sec": 3917197.58,
+  "peak_rss_mb": 61.54,
+  "within_memory_budget": true,
+  "within_latency_budget": true,
+  "total_cases_evaluated": 2,
+  "schema_parse_success_rate": 100.0,
+  "wrong_way_accuracy_pct": 100.0,
+  "risk_level_accuracy_pct": 100.0,
+  "hardware_flags": {
+    "avx2": true,
+    "avx512": false
+  },
+  "completed_at": "2026-11-03T13:59:50.937265+00:00"
+}

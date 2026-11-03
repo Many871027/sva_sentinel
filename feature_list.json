@@ -1,0 +1,272 @@
+{
+  "project": "SVA Residential Traffic & Micromobility Safety Sentinel",
+  "description": "Autonomous Edge Vision & Auditing System for residential street intersection monitoring, detecting wrong-way vehicular and micromobility infractions (cars, e-scooters, bicycles) under an 8GB RAM Docker budget. Heavy training, knowledge distillation, and model quantization are offloaded to rented Google Colab GPUs (A100/L4), deploying an OpenVINO INT8 centinel detector and a llama.cpp GGUF forensic auditor to a local FastAPI asyncio pipeline, MLFlow observability server, and Next.js incident timeline dashboard.",
+  "features": [
+    {
+      "id": "SVA-PRE-001",
+      "name": "docker_environment_and_dependency_scaffolding",
+      "title": "Containerized Runtime Architecture and 8GB RAM Budget Allocation",
+      "description": "Establish the project repository structure (backend/, frontend/, configs/, data/, models/, colab_notebooks/, docker/) and configure multi-service docker-compose with strict cgroup memory caps (API: 4GB, MLFlow: 1.5GB, Next.js: 1GB, Host reserve: 1.5GB) optimized for local CPU edge inference without heavy training bloat.",
+      "acceptance": [
+        "Create structured workspace layout separating edge inference, Google Colab training notebooks, and frontend",
+        "Author docker-compose.yml with memory hard limits (mem_limit: 4g for inference, 1.5g for mlflow, 1g for nextjs)",
+        "Configure pyproject.toml specifying edge runtime dependencies: fastapi, uvicorn, opencv-python-headless, openvino, llama-cpp-python, mlflow, supervision, pydantic",
+        "Verify container startup health checks without exceeding the 8GB aggregate system RAM ceiling"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-PRE-002",
+      "name": "camera_rtsp_and_homography_calibration",
+      "title": "Ground-Level Camera Ingestion and Planar Homography Calibration",
+      "description": "Implement camera calibration scripts to compute the 3x3 homography matrix H converting 2D ground-level image coordinates (u, v) into real-world metric intersection coordinates (X, Y in meters), defining authorized traffic direction vectors for each street lane.",
+      "acceptance": [
+        "Create interactive OpenCV utility to select 4 ground control points on the intersection pavement to establish metric plane H",
+        "Generate configs/homography_config.json storing matrix H, lane polygon boundaries, and directional vector thresholds",
+        "Define mathematical unit vector u_legal for vehicular and micromobility lanes to detect counter-flow movement",
+        "Validate projected world coordinate accuracy with test pavement calibration measurements (< 5% distance error)"
+      ],
+      "sdd": true,
+      "status": "spec_ready"
+    },
+    {
+      "id": "SVA-DATA-001",
+      "name": "huggingface_dataset_acquisition_and_curation",
+      "title": "Hugging Face Multimodal Traffic & Micromobility Dataset Ingestion",
+      "description": "Automate download, filtering, and normalization of public datasets from Hugging Face (starwit/overhead-traffic-anomalies, UniqueData/electric-scooters-tracking, and street-level vehicle datasets) focused on bicycles, e-scooters, and street vehicles in urban/residential contexts.",
+      "acceptance": [
+        "Implement data/ingest_hf_datasets.py downloading target subsets via huggingface_hub with resume capabilities",
+        "Standardize heterogeneous annotations into unified YOLO format with target classes: car, motorcycle, bicycle, e-scooter, pedestrian",
+        "Filter and augment dataset with lighting, occlusions, and ground-level perspective transformations matching the IP camera viewpoint",
+        "Generate deterministic train/val/test splits (70/20/10) with verified class balance and label integrity manifests"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-DATA-002",
+      "name": "base_models_acquisition_and_registry",
+      "title": "Hugging Face Teacher & Student Base Model Checkpoint Acquisition",
+      "description": "Download and register base model checkpoints from Hugging Face Hub: heavy teacher models (YOLO11x / RT-DETR-X), lightweight target detector student (YOLO11n), and base instruction-tuned language model for incident reasoning to be converted for llama.cpp.",
+      "acceptance": [
+        "Create scripts/download_base_models.py fetching PyTorch/SafeTensors weights with SHA256 checksum verification",
+        "Store base models in structured artifact directory models/base/ with versioning metadata",
+        "Validate baseline inference execution and zero-shot mAP on sample intersection test frames",
+        "Log baseline FP32 latency, parameter count, and memory allocation into initial registry"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-DIST-001",
+      "name": "colab_gpu_yolo_knowledge_distillation",
+      "title": "Google Colab GPU Knowledge Distillation Pipeline (Teacher YOLO11x to Student YOLO11n)",
+      "description": "Develop and execute a Google Colab Pro notebook leveraging rented high-performance GPUs (NVIDIA A100 or L4 with 24-40GB VRAM) to train student YOLO11n from teacher YOLO11x using composite response-based and feature-based knowledge distillation.",
+      "acceptance": [
+        "Create colab_notebooks/01_yolo_knowledge_distillation.ipynb with automatic Google Drive / Hugging Face data synchronization",
+        "Implement composite distillation loss L_total = alpha * L_hard + beta * L_KD(teacher, student; temp=tau) + gamma * L_feat",
+        "Execute distributed/mixed-precision distillation on rented Colab GPU achieving >= 92% of teacher mAP@50 while reducing parameters by > 80%",
+        "Export distilled student weights (PyTorch/ONNX) and push checkpoints to Hugging Face Model Hub / MLFlow remote registry"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-DIST-002",
+      "name": "colab_llamacpp_auditor_finetuning_and_export",
+      "title": "Google Colab Auditor Fine-Tuning and llama.cpp GGUF Conversion",
+      "description": "Fine-tune a lightweight instruction model in Google Colab GPU on residential traffic infraction reasoning (extracting entity, speed, counter-flow direction, risk level) and convert the fine-tuned model into GGUF format using llama.cpp conversion scripts.",
+      "acceptance": [
+        "Create colab_notebooks/02_auditor_finetuning_llamacpp.ipynb utilizing Colab GPU (L4/A100) for LoRA/QLoRA fine-tuning",
+        "Train model on 1,000 curated traffic violation telemetry prompts paired with verified structured JSON forensic verdicts",
+        "Merge LoRA adapters and convert full model into GGUF base format using llama.cpp convert_hf_to_gguf.py",
+        "Verify converted GGUF model produces valid structured JSON compliant with the incident schema"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-QUANT-001",
+      "name": "colab_openvino_nncf_int8_quantization",
+      "title": "OpenVINO NNCF INT8 Quantization in Google Colab and Edge Artifact Export",
+      "description": "Apply Post-Training Quantization (PTQ) to the distilled YOLO11n detector using OpenVINO NNCF within the Google Colab environment using a calibration set of 300 intersection frames, exporting optimized OpenVINO IR (.xml/.bin) for laptop deployment.",
+      "acceptance": [
+        "Create colab_notebooks/03_openvino_int8_quantization.ipynb executing nncf.quantize on the distilled detector",
+        "Calibrate INT8 weights using representative unlabelled intersection frames across day, dusk, and night conditions",
+        "Demonstrate model size reduction >= 60% with mAP@50-95 drop <= 1.5% compared to distilled FP32 model",
+        "Package and export calibrated OpenVINO IR artifacts ready for local deployment on laptop CPU achieving >= 25 FPS with < 1.2GB RAM"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-QUANT-002",
+      "name": "llamacpp_gguf_quantization_and_laptop_cpu_benchmarking",
+      "title": "llama.cpp GGUF Quantization (Q4_K_M) and Laptop CPU Execution Benchmarks",
+      "description": "Quantize the fine-tuned forensic auditor to 4-bit GGUF (Q4_K_M) using llama-quantize in Colab, and benchmark on-demand CPU inference latency and memory consumption on the 8GB RAM host via llama-cpp-python.",
+      "acceptance": [
+        "Execute llama-quantize in Colab to generate compact Q4_K_M GGUF model artifact",
+        "Integrate quantized GGUF model into local backend using llama-cpp-python with CPU AVX2/AVX-512 optimization",
+        "Benchmark forensic report generation ensuring peak RAM consumption <= 1.2GB RSS and response generation time <= 3.5 seconds",
+        "Validate deterministic JSON schema parsing on 100 test infraction cases without out-of-memory container crashes"
+      ],
+      "sdd": true,
+      "status": "done"
+    },
+    {
+      "id": "SVA-RT-001",
+      "name": "async_rtsp_stream_ingestion_and_ring_buffer",
+      "title": "Resilient Asynchronous RTSP Ingestion with Ring-Buffer Management",
+      "description": "Construct high-throughput, non-blocking RTSP video stream receiver using asyncio and background threading with a bounded ring buffer that prevents memory leaks and discards stale frames during network jitter.",
+      "acceptance": [
+        "Implement RTSP capture worker with automatic exponential backoff reconnection on socket drops",
+        "Maintain lock-free bounded asyncio.Queue ring buffer (max 30 frames) dropping oldest frames to maintain real-time latency (< 200ms glass-to-algorithm)",
+        "Expose stream health metrics (FPS, packet drop count, frame decoding latency) via API endpoint",
+        "Demonstrate continuous 24-hour stream endurance without memory growth"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-RT-002",
+      "name": "fastapi_lifespan_pipeline_architecture",
+      "title": "FastAPI Lifespan Architecture with Async Context Manager",
+      "description": "Architect the core FastAPI inference server using @asynccontextmanager lifespan handling to initialize OpenVINO runtime engines, warm up the llama.cpp GGUF model instance, start background tracking workers, and safely tear down hardware sessions.",
+      "acceptance": [
+        "Implement lifespan(app: FastAPI) context manager initializing OpenVINO compiled models and llama-cpp-python thread pools upon startup",
+        "Ensure graceful shutdown intercepting SIGINT/SIGTERM, draining frame queues and saving audit journals",
+        "Provide asynchronous health endpoints /health/ready and /health/live reflecting pipeline status and memory headroom",
+        "Write pytest test suite verifying context manager initialization, warm-up inference, and resource release"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-RT-003",
+      "name": "bytetrack_trajectory_and_wrongway_vector_engine",
+      "title": "ByteTrack Multi-Object Tracking & Kinematic Wrong-Way Vector Engine",
+      "description": "Integrate ByteTrack multi-object tracker with the OpenVINO INT8 detector, projecting tracking centers through homography H into metric coordinates to calculate instantaneous velocity vectors and detect counter-flow violations.",
+      "acceptance": [
+        "Execute ByteTrack ID association on detected bounding boxes across successive video frames",
+        "Project bottom-center bounding box foot-points (u, v) into ground plane coordinates (X, Y) via matrix H",
+        "Compute smoothed velocity vectors v_t = (p_t - p_{t-k}) / delta_t over a rolling 10-frame window",
+        "Evaluate cosine similarity cos(theta) = (v_t . u_legal) / (||v_t|| * ||u_legal||); trigger wrong-way alert when cos(theta) < -0.7 for > 1.0 second duration",
+        "Classify violators into categories: vehicular (cars/motorcycles) and high-risk micromobility (bicycles, children on e-scooters)"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-RT-004",
+      "name": "evidence_packaging_and_llamacpp_audit_dispatch",
+      "title": "Automated Evidence Packaging and Asynchronous llama.cpp Forensic Audit Dispatch",
+      "description": "When a wrong-way condition is verified, package a rolling 10-second video clip (3s pre-event, 4s event, 3s post-event) and trigger an asynchronous background worker task running llama.cpp with the GGUF model to generate a structured forensic dossier.",
+      "acceptance": [
+        "Maintain circular in-memory buffer of decoded frames to extract 10-second MP4 evidence clips without re-encoding delays",
+        "Render visual overlays showing tracked trajectory polyline, velocity vector arrow, violation bounding box, and BEV radar view",
+        "Dispatch async background task to llama-cpp-python passing kinematic metadata to produce structured JSON incident description",
+        "Store packaged evidence (mp4 clip, keyframe image, JSON metadata) into organized storage volumes /storage/incidents/{date}/"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-MLOPS-001",
+      "name": "mlflow_containerized_tracking_server",
+      "title": "Containerized MLFlow Tracking Server and Artifact Repository",
+      "description": "Configure an MLFlow tracking server running in a lightweight Docker container with SQLite backend and local artifact storage to track Colab distillation runs, quantization experiments, and edge production pipeline metrics.",
+      "acceptance": [
+        "Create Dockerfile.mlflow and compose service with SQLite persistent database and volume-mounted artifacts",
+        "Restrict MLFlow container memory limit to 1.5GB RAM with auto-restart policy",
+        "Configure authentication, experiment hierarchies (colab-distillation-yolo, colab-quantization, edge-runtime-telemetry), and REST API endpoints",
+        "Verify artifact logging and UI accessibility via localhost:5000"
+      ],
+      "sdd": false,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-MLOPS-002",
+      "name": "experiment_tracking_and_quantization_benchmarks",
+      "title": "Experiment Tracking for Distillation, Quantization, and Latency Telemetry",
+      "description": "Instrument Google Colab distillation and quantization notebooks with MLFlow remote client to log hyperparameters (temperature, loss weights, quantizer bits), performance metrics (mAP, latency distributions, P95/P99), and model artifacts.",
+      "acceptance": [
+        "Log Colab distillation hyperparameters (alpha, beta, gamma, tau, learning rate schedule) and validation metrics to MLFlow",
+        "Log OpenVINO NNCF INT8 and llama.cpp GGUF quantization metrics (model size ratio, perplexity/mAP delta)",
+        "Log runtime inference latency benchmarks comparing FP32, OpenVINO INT8, and llama.cpp GGUF backends",
+        "Register production-candidate INT8 and GGUF model packages in MLFlow Model Registry with transition to 'Staging'"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-MLOPS-003",
+      "name": "production_drift_and_memory_telemetry",
+      "title": "Runtime Drift Monitoring and Docker 8GB Budget Telemetry",
+      "description": "Implement an asynchronous background telemetry reporter in FastAPI that pushes real-time runtime metrics (FPS, inference latency, tracking ID switches, memory RSS, CPU load, daily infraction count) to MLFlow and Prometheus metrics endpoint.",
+      "acceptance": [
+        "Collect process and container memory metrics via psutil and /sys/fs/cgroup/memory verifying total consumption <= 8GB",
+        "Publish hourly summary metrics to MLFlow run 'production-edge-sentinel' (average FPS, peak RAM, incident counts)",
+        "Log tracking confidence drift and trigger automated notification if average detection confidence falls below threshold",
+        "Expose /metrics endpoint in Prometheus format for system observability"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-UI-001",
+      "name": "nextjs_dashboard_and_websocket_gateway",
+      "title": "Next.js Dashboard Architecture and Real-Time WebSocket Gateway",
+      "description": "Build modern Next.js (App Router, TypeScript, Tailwind CSS, Shadcn UI) frontend connecting via persistent WebSocket to FastAPI backend (/ws/live-alerts) for immediate incident dispatch and live telemetry display.",
+      "acceptance": [
+        "Scaffold Next.js 15+ frontend in frontend/ with Tailwind CSS, Lucide icons, and responsive layout",
+        "Implement robust useWebSocket custom hook with automatic reconnection, heartbeat ping/pong, and notification toasts",
+        "Display real-time header widgets for live camera status, stream FPS, CPU/RAM container utilization, and system operational mode",
+        "Ensure Next.js production build runs smoothly inside Docker container with <= 1GB RAM footprint"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-UI-002",
+      "name": "interactive_incident_timeline_and_dossier_viewer",
+      "title": "Interactive Incident Timeline and Video Dossier Modal",
+      "description": "Develop dynamic, filterable incident timeline interface presenting detected wrong-way events categorized by vehicle type (e-scooter, bicycle, car), with video replay, trajectory path visualizer, and Bird's-Eye View (BEV) radar overlay.",
+      "acceptance": [
+        "Render chronological event cards with timestamp, vehicle badge, direction indicator, and severity level (CRITICAL for child scooter in wrong-way)",
+        "Implement modal dossier inspector featuring synchronized MP4 evidence playback with scrubber and pause controls",
+        "Render 2D canvas overlay depicting the vehicle's trajectory vector vs legal street flow vector in metric coordinates",
+        "Provide multi-criteria filtering by date range, vehicle type, violation confidence, and audit validation status"
+      ],
+      "sdd": true,
+      "status": "pending"
+    },
+    {
+      "id": "SVA-UI-003",
+      "name": "forensic_report_and_incident_documentation_export",
+      "title": "Forensic Report Viewer and Residential Administration PDF Export",
+      "description": "Incorporate incident documentation viewer presenting llama.cpp natural language audit summaries and an export engine generating official PDF incident reports for condominium administration and traffic safety committees.",
+      "acceptance": [
+        "Display formatted semantic audit card with llama.cpp narrative: 'Veh\u00edculo micromovilidad (scooter el\u00e9ctrico infantil) circulando en sentido contrario a 17 km/h en carril poniente'",
+        "Enable authorized operators to validate, dispute, or add comments to recorded incidents with audit trail logging",
+        "Implement client/server PDF generation compiling keyframe snapshots, trajectory map, violation metrics, and committee signature lines",
+        "Provide batch CSV/JSON export of historical incidents for traffic engineering and residential council review"
+      ],
+      "sdd": true,
+      "status": "pending"
+    }
+  ],
+  "rules": {
+    "one_feature_at_a_time": true,
+    "require_tests_to_close": true,
+    "require_approved_spec_to_implement": true,
+    "valid_status": [
+      "pending",
+      "spec_ready",
+      "in_progress",
+      "done",
+      "blocked"
+    ],
+    "sdd_required_when": "feature has \"sdd\": true"
+  }
+}
